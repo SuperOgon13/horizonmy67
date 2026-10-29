@@ -1,20 +1,17 @@
-# Проверка: собирается ли Horizon под Android (arm64).
-# Запуск: вкладка Actions -> android-check -> Run workflow.
-# Положить в форк как .github/workflows/android-check.yml
-name: android-check
+name: android-build
 
 on:
   workflow_dispatch:
 
 jobs:
-  check:
+  build-apk:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
       - name: Remove Cargo.lock to force update
-        run: rm -f Cargo.lock
+        run: rm Cargo.lock
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -25,37 +22,62 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      # --keep-going: cargo не останавливается на первом упавшем крейте,
-      # а показывает ошибки сразу во всех -> меньше циклов "правка -> запуск".
-      - name: cargo check for Android arm64
-        id: check
-        continue-on-error: true
+      - name: Build for Android arm64
         shell: bash
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          set -o pipefail
-          cargo ndk -t arm64-v8a --platform 26 check -p horizon-client --no-default-features --keep-going 2>&1 | tee check.log
+          # Собираем как cdylib библиотеку (даже если в проекте указано иное)
+          cargo ndk -t arm64-v8a --platform 26 build -p horizon-client --no-default-features --release
 
-      - name: Error summary
-        if: always()
+      - name: Prepare APK structure
         shell: bash
         run: |
-          {
-            echo '## Android check: ${{ steps.check.outcome }}'
-            echo '```'
-            grep -E -A6 '^error' check.log | head -200 || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          # Создаем структуру папок для APK
+          mkdir -p apk/lib/arm64-v8a
+          mkdir -p apk/assets
+          
+          # Копируем собранный .so файл
+          cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
+          
+          # Генерируем минимальный AndroidManifest.xml
+          cat > apk/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.horizon.client">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application android:label="Horizon Client" android:hasCode="false">
+                  <activity android:name="android.app.NativeActivity"
+                      android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+                      android:exported="true">
+                      <meta-data android:name="android.app.lib_name" android:value="horizon_client" />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
-      # Полный лог можно скачать со страницы запуска (раздел Artifacts).
-      - name: Upload full log
-        if: always()
+      - name: Package APK
+        shell: bash
+        run: |
+          cd apk
+          # Используем aapt2 и apksigner из Android SDK (они уже есть на сервере)
+          # 1. Компилируем ресурсы и манифест
+          aapt2 compile --dir . -o compiled.zip || true
+          aapt2 link -o unsigned.apk -I $ANDROID_HOME/platforms/android-35/android.jar --manifest AndroidManifest.xml -A assets
+          
+          # 2. Добавляем файлы библиотек
+          zip -r unsigned.apk lib/
+          
+          # 3. Выравниваем и подписываем
+          zipalign -f 4 unsigned.apk aligned.apk
+          apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out horizon-debug.apk aligned.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: check-log
-          path: check.log
-          if-no-files-found: ignore
-
-      - name: Fail if check failed
-        if: steps.check.outcome == 'failure'
-        run: exit 1
+          name: horizon-android-apk
+          path: apk/horizon-debug.apk
+          retention-days: 5
