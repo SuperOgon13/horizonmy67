@@ -2,3 +2,12 @@
 name = "arboard"
 version = "3.6.0"
 edition = "2021"
+description = "Stub of arboard for targets without a system clipboard backend (Android)"
+license = "MIT OR Apache-2.0"
+
+# Те же имена фич, что у настоящего arboard: если какой-то крейт workspace
+# запрашивает arboard с фичей (например image-data), cargo не должен падать.
+[features]
+default = ["image-data"]
+image-data = []
+wayland-data-control = []
