@@ -34,8 +34,18 @@ jobs:
           mkdir -p apk/lib/arm64-v8a
           mkdir -p apk/assets
           
-          cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
+          # Ищем и копируем ВСЕ .so файлы из папки релиза
+          find target/aarch64-linux-android/release/ -maxdepth 1 -name "*.so" -exec cp {} apk/lib/arm64-v8a/ \;
           
+          # Если Rust собрал файл без расширения .so (как бинарник), переименовываем его
+          if [ -f target/aarch64-linux-android/release/horizon-client ]; then
+            cp target/aarch64-linux-android/release/horizon-client apk/lib/arm64-v8a/libhorizon_client.so
+          fi
+          
+          # Выводим список файлов в лог, чтобы проверить, что скопировалось
+          ls -la apk/lib/arm64-v8a/
+          
+          # Генерируем AndroidManifest.xml
           cat > apk/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -59,12 +69,21 @@ jobs:
         shell: bash
         run: |
           cd apk
+          # 1. Компилируем ресурсы и манифест
           aapt2 compile --dir . -o compiled.zip || true
           aapt2 link -o unsigned.apk -I $ANDROID_HOME/platforms/android-35/android.jar --manifest AndroidManifest.xml -A assets
           
+          # 2. Добавляем собранные библиотеки в APK
           zip -r unsigned.apk lib/
           
+          # 3. Выравниваем и подписываем
           zipalign -f 4 unsigned.apk aligned.apk
+          
+          # Проверяем, есть ли дебаг-ключ, если нет — создаем
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+          fi
+          
           apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out horizon-debug.apk aligned.apk
 
       - name: Upload APK
