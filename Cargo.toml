@@ -60,7 +60,6 @@ large_enum_variant = "allow"
 [patch.crates-io]
 wgpu-hal = { path = "third_party/wgpu-hal" }
 arboard = { path = "third_party/arboard-stub" }
-winit = { path = "third_party/winit" }
 
 [profile.dev]
 debug = "line-tables-only"
