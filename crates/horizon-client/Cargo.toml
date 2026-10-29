@@ -1,105 +1,85 @@
-name: android-build
+[package]
+name = "horizon-client"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.90"
+description = "Horizon native development client"
+crate-type = ["cdylib"]
 
-on:
-  workflow_dispatch:
+[dependencies]
+horizon-assets = { path = "../horizon-assets" }
+horizon-client-core = { path = "../horizon-client-core" }
+horizon-client-input = { path = "../horizon-client-input" }
+horizon-client-render = { path = "../horizon-client-render" }
+horizon-command = { path = "../horizon-command" }
+horizon-items = { path = "../horizon-items" }
+horizon-core = { path = "../horizon-core" }
+horizon-threads = { path = "../horizon-threads" }
+horizon-hdr = { path = "../horizon-hdr" }
+horizon-world = { path = "../horizon-world" }
+horizon-protocol = { path = "../horizon-protocol" }
+horizon-server-files = { path = "../horizon-server-files" }
+horizon-shaders = { path = "../horizon-shaders" }
+horizon-shader-api = { path = "../horizon-shader-api" }
+horizon-friends = { path = "../horizon-friends" }
+horizon-mods = { path = "../horizon-mods", default-features = false, features = ["index"] }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
+winit = "0.30.13"
+pollster = "0.4"
+bytemuck = { version = "1.24", features = ["derive"] }
+glam = "0.30"
+png = "0.18"
+sha2 = "0.10.9"
+sha1 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
+naga = { version = "30.0.1", features = ["wgsl-in", "hlsl-out"] }
+miniz_oxide = "0.8"
+ab_glyph = "0.2.32"
+log = "0.4"
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"] }
+horizon-theme = { path = "../horizon-theme" }
+horizon-telemetry = { path = "../horizon-telemetry", default-features = false, features = ["live"] }
+horizon-bench = { path = "../horizon-bench" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+gilrs = { version = "0.11", optional = true }
+horizon-dualsense = { path = "../horizon-dualsense", optional = true }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+unicode-bidi = "0.3.18"
 
-jobs:
-  build-apk:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v4
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
 
-      - name: Remove Cargo.lock to force update
-        run: rm Cargo.lock
+[target.'cfg(windows)'.dependencies]
+open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
+wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+wgpu = { version = "30.0.1", default-features = false, features = ["gles"] }
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Сбрасываем кэш, чтобы он пересобрал проект с новыми настройками cdylib
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v2
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+[features]
+default = ["audio", "controllers"]
+audio = ["horizon-client-render/audio"]
+controllers = ["dep:gilrs", "dep:horizon-dualsense", "horizon-client-input/controllers"]
+mods = ["horizon-mods/runtime"]
+rng-trace = ["horizon-core/rng-trace"]
 
-      - name: Install Android Build Tools
-        shell: bash
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0" "platforms;android-34" || true
+[[example]]
+name = "client_probe"
+path = "examples/probe/main.rs"
 
-      - name: Build for Android arm64
-        shell: bash
-        run: |
-          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          cargo ndk -t arm64-v8a --platform 26 build -p horizon-client --no-default-features --release
+[lints]
+workspace = true
 
-      - name: Prepare APK structure
-        shell: bash
-        run: |
-          mkdir -p apk/lib/arm64-v8a
-          mkdir -p apk/assets
-          
-          # Умный поиск файла
-          if [ -f target/aarch64-linux-android/release/libhorizon_client.so ]; then
-            echo "Найден .so файл!"
-            cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
-          elif [ -f target/aarch64-linux-android/release/horizon-client ]; then
-            echo "Найден бинарник, переименовываем в .so"
-            cp target/aarch64-linux-android/release/horizon-client apk/lib/arm64-v8a/libhorizon_client.so
-          else
-            echo "Файл не найден! Вот список того, что собралось:"
-            ls -la target/aarch64-linux-android/release/
-            exit 1
-          fi
-          
-          cat > apk/AndroidManifest.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.horizon.client">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <application android:label="Horizon Client" android:hasCode="false">
-                  <activity android:name="android.app.NativeActivity"
-                      android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-                      android:exported="true">
-                      <meta-data android:name="android.app.lib_name" android:value="horizon_client" />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
+[dev-dependencies]
+horizon-client-render = { path = "../horizon-client-render", features = ["test-support"] }
+horizon-items = { path = "../horizon-items", features = ["test-support"] }
+naga = { version = "30.0.1", features = ["wgsl-in", "hlsl-out", "msl-out", "spv-out"] }
 
-      - name: Package APK
-        shell: bash
-        continue-on-error: true
-        run: |
-          cd apk
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
-          
-          $BUILD_TOOLS/aapt2 compile --dir . -o compiled.zip || true
-          $BUILD_TOOLS/aapt2 link -o unsigned.apk -I $ANDROID_HOME/platforms/android-34/android.jar --manifest AndroidManifest.xml -A assets
-          
-          zip -r unsigned.apk lib/
-          
-          $BUILD_TOOLS/zipalign -f 4 unsigned.apk aligned.apk
-          
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
-          fi
-          
-          $BUILD_TOOLS/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out horizon-debug.apk aligned.apk || true
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: horizon-build-files
-          path: |
-            apk/aligned.apk
-            apk/horizon-debug.apk
-            apk/lib/arm64-v8a/libhorizon_client.so
-          retention-days: 5
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }
