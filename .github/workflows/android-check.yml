@@ -1,5 +1,5 @@
 # Проверка: собирается ли Horizon под Android (arm64).
-# Запуск: вкладка Actions -> android-check -> Run workflow.
+# Запуск: вкладка Actions -> android-check -> Запустить рабочий процесс.
 # Положить в форк как .github/workflows/android-check.yml
 name: android-check
 
@@ -12,6 +12,9 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+
+      - name: Remove Cargo.lock to force update
+        run: rm Cargo.lock
 
       - uses: dtolnay/rust-toolchain@stable
         with:
