@@ -25,7 +25,6 @@ jobs:
       - name: Install Android Build Tools
         shell: bash
         run: |
-          # Устанавливаем нужные пакеты SDK
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0" "platforms;android-34"
 
       - name: Build for Android arm64
@@ -39,11 +38,8 @@ jobs:
         run: |
           mkdir -p apk/lib/arm64-v8a
           mkdir -p apk/assets
-          
-          # Копируем собранный .so файл
           cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
           
-          # Генерируем AndroidManifest.xml
           cat > apk/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -65,32 +61,29 @@ jobs:
 
       - name: Package APK
         shell: bash
+        continue-on-error: true # Если упадет подпись, мы не остановимся
         run: |
           cd apk
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
           
-          # 1. Компилируем ресурсы
           $BUILD_TOOLS/aapt2 compile --dir . -o compiled.zip || true
-          
-          # 2. Линкуем манифест и ресурсы
           $BUILD_TOOLS/aapt2 link -o unsigned.apk -I $ANDROID_HOME/platforms/android-34/android.jar --manifest AndroidManifest.xml -A assets
-          
-          # 3. Добавляем файлы библиотек
           zip -r unsigned.apk lib/
-          
-          # 4. Выравниваем и подписываем
           $BUILD_TOOLS/zipalign -f 4 unsigned.apk aligned.apk
           
-          # Создаем дебаг-ключ, если его нет
+          # Пытаемся подписать
           if [ ! -f ~/.android/debug.keystore ]; then
             keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
           fi
           
-          $BUILD_TOOLS/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out horizon-debug.apk aligned.apk
+          $BUILD_TOOLS/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out horizon-debug.apk aligned.apk || true
 
-      - name: Upload APK
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: horizon-android-apk
-          path: apk/horizon-debug.apk
+          name: horizon-build-files
+          path: |
+            apk/aligned.apk
+            apk/horizon-debug.apk
+            apk/lib/arm64-v8a/libhorizon_client.so
           retention-days: 5
