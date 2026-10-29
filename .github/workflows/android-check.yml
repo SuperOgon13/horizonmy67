@@ -26,20 +26,16 @@ jobs:
         shell: bash
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          # Собираем как cdylib библиотеку (даже если в проекте указано иное)
           cargo ndk -t arm64-v8a --platform 26 build -p horizon-client --no-default-features --release
 
       - name: Prepare APK structure
         shell: bash
         run: |
-          # Создаем структуру папок для APK
           mkdir -p apk/lib/arm64-v8a
           mkdir -p apk/assets
           
-          # Копируем собранный .so файл
           cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
           
-          # Генерируем минимальный AndroidManifest.xml
           cat > apk/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -63,15 +59,11 @@ jobs:
         shell: bash
         run: |
           cd apk
-          # Используем aapt2 и apksigner из Android SDK (они уже есть на сервере)
-          # 1. Компилируем ресурсы и манифест
           aapt2 compile --dir . -o compiled.zip || true
           aapt2 link -o unsigned.apk -I $ANDROID_HOME/platforms/android-35/android.jar --manifest AndroidManifest.xml -A assets
           
-          # 2. Добавляем файлы библиотек
           zip -r unsigned.apk lib/
           
-          # 3. Выравниваем и подписываем
           zipalign -f 4 unsigned.apk aligned.apk
           apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out horizon-debug.apk aligned.apk
 
