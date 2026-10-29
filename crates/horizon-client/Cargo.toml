@@ -110,3 +110,6 @@ horizon-client-render = { path = "../horizon-client-render", features = ["test-s
 horizon-items = { path = "../horizon-items", features = ["test-support"] }
 # Every WGSL shader translated as wgpu's DirectX 12 backend does (gfx.rs tests).
 naga = { version = "30.0.1", features = ["wgsl-in", "hlsl-out", "msl-out", "spv-out"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }
