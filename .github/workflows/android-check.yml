@@ -18,6 +18,9 @@ jobs:
           targets: aarch64-linux-android
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Сбрасываем кэш, чтобы он пересобрал проект с новыми настройками cdylib
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v2
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
@@ -39,7 +42,18 @@ jobs:
           mkdir -p apk/lib/arm64-v8a
           mkdir -p apk/assets
           
-          cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
+          # Умный поиск файла
+          if [ -f target/aarch64-linux-android/release/libhorizon_client.so ]; then
+            echo "Найден .so файл!"
+            cp target/aarch64-linux-android/release/libhorizon_client.so apk/lib/arm64-v8a/
+          elif [ -f target/aarch64-linux-android/release/horizon-client ]; then
+            echo "Найден бинарник, переименовываем в .so"
+            cp target/aarch64-linux-android/release/horizon-client apk/lib/arm64-v8a/libhorizon_client.so
+          else
+            echo "Файл не найден! Вот список того, что собралось:"
+            ls -la target/aarch64-linux-android/release/
+            exit 1
+          fi
           
           cat > apk/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
