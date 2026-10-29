@@ -1,6 +1,6 @@
 [package]
 name = "arboard"
-version = "3.6.0"
+version = "3.7.0"
 edition = "2021"
 description = "Stub of arboard for targets without a system clipboard backend (Android)"
 license = "MIT OR Apache-2.0"
