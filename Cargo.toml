@@ -68,6 +68,7 @@ large_enum_variant = "allow"
 # Drop this and the folder once a wgpu release has both fixes.
 [patch.crates-io]
 wgpu-hal = { path = "third_party/wgpu-hal" }
+arboard = { path = "third_party/arboard-stub" }
 
 # Line tables keep file:line in backtraces; full debug info made every
 # example and test binary hundreds of megabytes and slow to link.
